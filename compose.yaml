@@ -1,0 +1,14 @@
+services:
+  studio:
+    build: .
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      RAYWORK_MODE: ${RAYWORK_MODE:-demo}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+    volumes:
+      - studio-data:/data
+    restart: unless-stopped
+volumes:
+  studio-data:

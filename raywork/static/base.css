@@ -1,0 +1,12 @@
+/* Local-only type and color system. No third-party fonts, scripts or analytics. */
+::selection {
+  background: #e4c9b0;
+  color: #24383c;
+}
+html {
+  scroll-behavior: smooth;
+}
+pre,
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
