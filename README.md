@@ -40,7 +40,7 @@ RayWork 把这些事放进同一个项目：**资料 → 6 个内容模块 → �
 需要 Python 3.11+。默认无需 Node、数据库服务或模型 Key。
 
 ```bash
-git clone https://github.com/CodeRayZhang/raywork-studio.git
+git clone https://github.com/RayXBuilds/raywork-studio.git
 cd raywork-studio
 python3 -m venv .venv
 source .venv/bin/activate
