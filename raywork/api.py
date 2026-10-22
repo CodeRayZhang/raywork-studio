@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .generator import BLOCKS, fingerprint, generate, validate_blocks
+from .generator import BLOCKS, active_rules, fingerprint, generate, validate_blocks
 from .store import Store, event, now, uid
 
 
@@ -48,6 +48,20 @@ class CommentInput(VersionInput):
     text: str = Field(min_length=1, max_length=2000)
 
 
+class RuleInput(BaseModel):
+    text: str = Field(min_length=1, max_length=1000)
+    scope: Literal["all", "angle", "title", "post", "cover", "script", "cta"] = "all"
+    comment_id: str | None = None
+
+
+class RuleDecision(VersionInput):
+    status: Literal["active", "retired"]
+
+
+class RuleImport(BaseModel):
+    project_id: str
+
+
 class JobInput(BaseModel):
     key: str = Field(min_length=8, max_length=100, pattern=r"^[\w-]+$")
     target: Literal["angle", "title", "post", "cover", "script", "cta"] | None = None
@@ -75,6 +89,9 @@ def checkpoint(block):
             for k in ("text", "citations", "version", "status", "updated_at")
         }
     )
+    block["history"][-1]["memory_context"] = copy.deepcopy(
+        block.get("memory_context", [])
+    )
 
 
 def create_app(data_dir, admin_token, mode="demo", generator=generate):
@@ -83,7 +100,7 @@ def create_app(data_dir, admin_token, mode="demo", generator=generate):
     store = Store(Path(data_dir) / "studio.sqlite3")
     app = FastAPI(
         title="RayWork Studio",
-        version="0.1.0",
+        version="0.2.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -187,6 +204,7 @@ def create_app(data_dir, admin_token, mode="demo", generator=generate):
                 "history": previous["history"] if previous else [],
                 "updated_at": now(),
                 "usage": usage,
+                "memory_context": active_rules(project, item["key"]),
                 "approval": None,
             }
 
@@ -218,7 +236,7 @@ def create_app(data_dir, admin_token, mode="demo", generator=generate):
                 project = store.get(job["project_id"], db)
                 require(
                     fingerprint(project) == job["fingerprint"],
-                    "生成期间资料已更新；请基于新资料重新生成",
+                    "生成期间资料已更新或偏好规则已变更；请重新生成",
                 )
                 assert_job_allowed(
                     project,
@@ -266,7 +284,7 @@ def create_app(data_dir, admin_token, mode="demo", generator=generate):
     def health():
         return {
             "status": "ok",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "mode": mode,
             "configured": mode == "demo"
             or bool(os.getenv("OPENAI_API_KEY") and os.getenv("OPENAI_MODEL")),
@@ -303,6 +321,115 @@ def create_app(data_dir, admin_token, mode="demo", generator=generate):
     @app.get("/api/projects/{pid}", dependencies=[Depends(admin)])
     def project(pid: str):
         return get_project(pid)
+
+    def add_rule(p, text, scope, origin):
+        rules = p.setdefault("memory", [])
+        require(len(rules) < 100, "每个项目最多保存 100 条规则记录", 422)
+        require(text.strip(), "规则不能为空", 422)
+        require(
+            not any(
+                r["text"] == text.strip()
+                and r["scope"] == scope
+                and r["status"] != "retired"
+                for r in rules
+            ),
+            "已有相同规则",
+        )
+        rules.append(
+            {
+                "id": uid(),
+                "text": text.strip(),
+                "scope": scope,
+                "status": "pending",
+                "version": 1,
+                "origin": origin,
+                "created_at": now(),
+                "updated_at": now(),
+            }
+        )
+
+    @app.post("/api/projects/{pid}/memory", dependencies=[Depends(admin)])
+    def propose_rule(pid: str, data: RuleInput):
+        def change(p):
+            origin = {"type": "manual"}
+            if data.comment_id:
+                found = [
+                    (key, c)
+                    for key, b in p["blocks"].items()
+                    for c in b["comments"]
+                    if c["id"] == data.comment_id
+                ]
+                require(bool(found), "批注不属于当前项目", 404)
+                key, c = found[0]
+                origin = {
+                    "type": "comment",
+                    "block": key,
+                    "comment_id": c["id"],
+                    "text": c["text"],
+                    "version": c["version"],
+                }
+            add_rule(p, data.text, data.scope, origin)
+            event(p, "memory_proposed", "新增待确认的客户偏好规则")
+
+        return mutate(pid, change)
+
+    @app.post("/api/projects/{pid}/memory/import", dependencies=[Depends(admin)])
+    def import_rules(pid: str, data: RuleImport):
+        # Snapshot copy, never a live cross-project link. Imported rules require reconfirmation.
+        with store.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            p, source = store.get(pid, db), store.get(data.project_id, db)
+            require(p is not None and source is not None, "项目不存在", 404)
+            require(pid != data.project_id, "不能从当前项目导入", 422)
+            require(
+                p["brief"]["brand"].strip().casefold()
+                == source["brief"]["brand"].strip().casefold(),
+                "仅可从同品牌项目复用规则",
+                422,
+            )
+            count = 0
+            for rule in active_rules(source):
+                if any(
+                    r["text"] == rule["text"]
+                    and r["scope"] == rule["scope"]
+                    and r["status"] != "retired"
+                    for r in p.get("memory", [])
+                ):
+                    continue
+                add_rule(
+                    p,
+                    rule["text"],
+                    rule["scope"],
+                    {
+                        "type": "import",
+                        "project_id": source["id"],
+                        "project_name": source["name"],
+                        "rule_id": rule["id"],
+                        "version": rule["version"],
+                    },
+                )
+                count += 1
+            require(count, "没有可复用的新规则")
+            event(p, "memory_imported", f"复用 {count} 条规则，等待逐条确认")
+            store.save(p, db)
+            return p
+
+    @app.post("/api/projects/{pid}/memory/{rid}", dependencies=[Depends(admin)])
+    def decide_rule(pid: str, rid: str, data: RuleDecision):
+        def change(p):
+            r = next((r for r in p.get("memory", []) if r["id"] == rid), None)
+            require(r is not None, "规则不存在", 404)
+            require(r["version"] == data.version, "规则已变更，请刷新后操作")
+            require(r["status"] != "retired", "规则已停用，请创建新规则")
+            require(r["status"] != data.status, "规则状态未改变")
+            r.update(status=data.status, version=r["version"] + 1, updated_at=now())
+            event(
+                p,
+                "memory_decided",
+                "确认客户偏好规则" if data.status == "active" else "停用客户偏好规则",
+            )
+
+        return mutate(pid, change)
 
     @app.put("/api/projects/{pid}/sources/{sid}", dependencies=[Depends(admin)])
     def source(pid: str, sid: str, data: SourceEdit):

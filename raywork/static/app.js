@@ -139,7 +139,7 @@ function modalHead(title) {
   return `<div class="modalheading"><h2>${title}</h2><button class="quiet" data-close aria-label="关闭">×</button></div>`;
 }
 function footer() {
-  return '<div class="footnote"><span>RayWork Studio · 让每一次交付，都有据可循。</span><span>v0.1 · 人工审核后交付</span></div>';
+  return '<div class="footnote"><span>RayWork Studio · 让每一次交付，都有据可循。</span><span>v0.2 · 人工审核后交付</span></div>';
 }
 
 async function boot() {
@@ -254,6 +254,7 @@ function render() {
   const toolbar = `<div class="toolbar"><nav class="tabs" aria-label="项目视图">${[
     ["work", "内容工作台"],
     ["sources", "品牌与资料"],
+    ["memory", "客户偏好"],
     ["activity", "活动记录"],
   ]
     .map(
@@ -274,9 +275,10 @@ function render() {
       ? workView()
       : tab === "sources"
         ? sourceView()
-        : activityView();
+        : tab === "memory" ? memoryView() : activityView();
   $("#app").innerHTML = shell(heading + pipeline + toolbar + jobbar + body);
   commonBindings();
+  memoryBindings();
   whenClick("[data-tab]", async (e, el) => {
     tab = el.dataset.tab;
     render();
@@ -396,14 +398,14 @@ function inspector(isReview) {
     ? b.comments
         .map(
           (c) =>
-            `<div class="comment ${c.resolved ? "resolved" : ""}"><div class="commentmeta"><span>${esc(c.actor)} · v${c.version}</span><span>${c.resolved ? "已解决" : formatTime(c.at)}</span></div><div>${esc(c.text)}</div>${!isReview && !c.resolved ? `<button class="small quiet" data-resolve="${c.id}">标记已解决 ✓</button>` : ""}</div>`,
+            `<div class="comment ${c.resolved ? "resolved" : ""}"><div class="commentmeta"><span>${esc(c.actor)} · v${c.version}</span><span>${c.resolved ? "已解决" : formatTime(c.at)}</span></div><div>${esc(c.text)}</div>${!isReview ? `<button class="small quiet" data-remember="${c.id}">整理为偏好规则</button>` : ""}${!isReview && !c.resolved ? `<button class="small quiet" data-resolve="${c.id}">标记已解决 ✓</button>` : ""}</div>`,
         )
         .join("")
     : '<p class="smallhelp">还没有批注。把修改意见留在对应模块，减少来回沟通。</p>';
   const isApproved = b.status === "approved",
     canApprove =
       !isApproved && !b.stale && !b.comments.some((c) => !c.resolved);
-  return `<aside class="inspector"><div class="inspecthead"><div class="eyebrow">${isReview ? "CLIENT REVIEW" : "EDITOR / SELECTED BLOCK"}</div><h3>${esc(b.label)} <span class="badge ${b.status}">v${b.version} · ${statusLabel(b)}</span></h3></div><div class="inspectbody"><div>${b.stale ? '<div class="notice">来源资料已更新。请基于新资料重写这个模块，再提交审核。</div>' : ""}${isReview ? `<div class="reviewtext">${esc(b.text)}</div>` : `<label for="block-text" class="eyebrow">内容编辑</label><textarea id="block-text" rows="10" maxlength="12000" ${isApproved ? "readonly" : ""}>${esc(b.text)}</textarea><div class="actions">${isApproved ? '<button id="reopen">撤回审核并编辑</button>' : '<button id="save-block">保存修改</button><button class="quiet" id="discard">放弃修改</button>'}</div>`}<div class="actions"><button class="primary" id="approve" ${canApprove ? "" : "disabled"}>${icon("check")}${isApproved ? "当前版本已通过" : "通过当前版本"}</button></div>${b.approval ? `<p class="smallhelp">${esc(b.approval.actor)} · ${formatTime(b.approval.at)}</p>` : ""}${!isReview && !isApproved ? `<label for="rewrite-instruction">只重写这个模块</label><textarea id="rewrite-instruction" rows="2" maxlength="2000" placeholder="例如：标题更具体，保留十分钟手冲这个场景"></textarea><div class="actions"><button class="accent" id="rewrite">${icon("spark")}局部重写</button></div><p class="smallhelp">${health.mode === "demo" ? "演示模式会附上修改要求，不会进行智能改写。" : "只更新当前模块，其他模块保留。"}</p>` : ""}<div class="sectionlabel">资料依据</div>${references}<p class="smallhelp">摘录已匹配原文；是否支持整段表述，仍需人工核对。</p></div><div><div class="sectionlabel">修改批注</div>${comments}<label for="comment-text">新增批注</label><textarea id="comment-text" rows="2" maxlength="2000" placeholder="明确指出希望调整的内容…"></textarea><div class="actions"><button id="add-comment">提交批注</button></div>${
+  return `<aside class="inspector"><div class="inspecthead"><div class="eyebrow">${isReview ? "CLIENT REVIEW" : "EDITOR / SELECTED BLOCK"}</div><h3>${esc(b.label)} <span class="badge ${b.status}">v${b.version} · ${statusLabel(b)}</span></h3></div><div class="inspectbody"><div>${b.stale ? '<div class="notice">来源资料已更新。请基于新资料重写这个模块，再提交审核。</div>' : ""}${isReview ? `<div class="reviewtext">${esc(b.text)}</div>` : `<label for="block-text" class="eyebrow">内容编辑</label><textarea id="block-text" rows="10" maxlength="12000" ${isApproved ? "readonly" : ""}>${esc(b.text)}</textarea><div class="actions">${isApproved ? '<button id="reopen">撤回审核并编辑</button>' : '<button id="save-block">保存修改</button><button class="quiet" id="discard">放弃修改</button>'}</div>`}<div class="actions"><button class="primary" id="approve" ${canApprove ? "" : "disabled"}>${icon("check")}${isApproved ? "当前版本已通过" : "通过当前版本"}</button></div>${b.approval ? `<p class="smallhelp">${esc(b.approval.actor)} · ${formatTime(b.approval.at)}</p>` : ""}${!isReview && !isApproved ? `<label for="rewrite-instruction">只重写这个模块</label><textarea id="rewrite-instruction" rows="2" maxlength="2000" placeholder="例如：标题更具体，保留十分钟手冲这个场景"></textarea><div class="actions"><button class="accent" id="rewrite">${icon("spark")}局部重写</button></div><p class="smallhelp">${health.mode === "demo" ? "演示模式会附上修改要求，不会进行智能改写。" : "只更新当前模块，其他模块保留。"}</p>` : ""}${!isReview ? `<div class="sectionlabel">本版生成时的偏好规则</div><p class="smallhelp">${(b.memory_context || []).map(r => esc(r.text)).join("；") || "未使用已确认规则"}${b.usage?.mode === "demo" ? " · 模板演示不执行规则" : ""}</p>` : ""}<div class="sectionlabel">资料依据</div>${references}<p class="smallhelp">摘录已匹配原文；是否支持整段表述，仍需人工核对。</p></div><div><div class="sectionlabel">修改批注</div>${comments}<label for="comment-text">新增批注</label><textarea id="comment-text" rows="2" maxlength="2000" placeholder="明确指出希望调整的内容…"></textarea><div class="actions"><button id="add-comment">提交批注</button></div>${
     !isReview && b.history.length
       ? `<div class="sectionlabel">历史版本 · ${b.history.length}</div>${[
           ...b.history,
@@ -417,6 +419,38 @@ function inspector(isReview) {
       : ""
   }${!isReview && b.usage ? `<div class="sectionlabel">最近生成</div><p class="smallhelp">${esc(b.usage.model)} · ${b.usage.elapsed_seconds ?? "—"}s<br>${b.usage.input_tokens} 输入 / ${b.usage.output_tokens} 输出 tokens<br>${b.usage.estimated_cost_usd === null ? "成本未配置，未估算" : `估算 $${Number(b.usage.estimated_cost_usd).toFixed(4)}`}</p>` : ""}</div></div></aside>`;
 }
+
+function memoryView() {
+  const rules = current.memory || [];
+  const candidates = projects.filter(p => p.id !== current.id && p.brief.brand.trim().toLowerCase() === current.brief.brand.trim().toLowerCase() && (p.memory || []).some(r => r.status === "active"));
+  return `<section class="panel"><div class="eyebrow">CUSTOMER MEMORY</div><h2>这位客户的要求，下次还记得。</h2><p class="muted">把批注整理成长期适用的规则，确认后才用于后续生成。仅保存本项目；同品牌项目可手动复用。</p><div class="actions"><button class="primary" id="new-rule">＋ 新增偏好规则</button></div><div class="notice">规则不提供产品事实，也不保证模型完全遵守。确认或停用只影响下一次生成，不会修改已有内容或审核结果。${health.mode === "demo" ? "当前为模板演示，规则仅作记录，不执行智能改写。" : "生成时将向模型发送适用的已确认规则，请继续人工审核。"}</div>${candidates.length ? `<label for="memory-source">复用同品牌项目的已确认规则</label><select id="memory-source">${candidates.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select><div class="actions"><button id="import-rules">导入为待确认规则</button></div>` : ""}<div class="memory-list">${rules.length ? [...rules].reverse().map(r => `<article class="memory-card"><div class="actions"><span class="badge">${{pending:"待确认",active:"已确认",retired:"已停用"}[r.status]}</span><span class="muted">${r.scope === "all" ? "全部模块" : labels[r.scope]} · v${r.version}</span></div><p>${esc(r.text)}</p><p class="smallhelp">${r.origin.type === "comment" ? "来源批注：" + esc(r.origin.text) : r.origin.type === "import" ? "复用自：" + esc(r.origin.project_name) : "工作室手动整理"}</p><div class="actions">${r.status === "pending" ? `<button class="primary small" data-rule="${r.id}" data-decision="active">确认用于后续生成</button>` : ""}${r.status !== "retired" ? `<button class="small" data-rule="${r.id}" data-decision="retired">${r.status === "pending" ? "放弃此规则" : "停用规则"}</button>` : ""}</div></article>`).join("") : `<p class="muted">还没有偏好规则。可从内容模块的批注中整理，也可以手动新增。</p>`}</div></section>`;
+}
+function ruleModal(comment) {
+  modal(`${modalHead("整理客户偏好规则")}<p class="muted">只记录长期适用的表达要求，例如“标题不使用夸张承诺”。一次性的价格或活动日期应保留在资料中。</p><form id="rule-form"><label for="rule-text">规则内容</label><textarea id="rule-text" name="text" rows="4" maxlength="1000" required>${esc(comment?.text || "")}</textarea><label for="rule-scope">适用模块</label><select id="rule-scope" name="scope"><option value="all">全部模块</option>${Object.entries(labels).map(([k,v]) => `<option value="${k}" ${comment && k === selected ? "selected" : ""}>${v}</option>`).join("")}</select><p class="smallhelp">保存后进入待确认，不会自动解决原批注。</p><div class="modalfoot"><button type="button" data-close>取消</button><button class="primary" type="submit">保存为待确认</button></div></form>`);
+  $("#rule-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const button = $("button[type=submit]", e.target);
+    button.disabled = true;
+    try {
+      await api(`/projects/${current.id}/memory`, {method:"POST", body:{...formValues(e.target), comment_id:comment?.id || null}});
+      $("#modal").close(); tab = "memory"; await loadProjects(); toast("规则已保存，请确认后使用");
+    } catch (error) {toast(error.message);} finally {button.disabled = false;}
+  });
+}
+function memoryBindings() {
+  whenClick("#new-rule", async () => ruleModal());
+  whenClick("[data-remember]", async (e, el) => ruleModal(current.blocks[selected].comments.find(c => c.id === el.dataset.remember)));
+  whenClick("[data-rule]", async (e, el) => {
+    const rule = current.memory.find(r => r.id === el.dataset.rule);
+    await api(`/projects/${current.id}/memory/${rule.id}`, {method:"POST", body:{version:rule.version,status:el.dataset.decision}});
+    await loadProjects(); toast("规则状态已更新，仅影响后续生成");
+  });
+  whenClick("#import-rules", async () => {
+    await api(`/projects/${current.id}/memory/import`, {method:"POST", body:{project_id:$("#memory-source").value}});
+    await loadProjects(); toast("已复用，请逐条确认适用范围");
+  });
+}
+
 function sourceView() {
   const s = current.sources[0];
   return `<div class="sourcegrid"><section class="panel"><h3>${esc(s.title)} <span class="badge">v${s.version}</span></h3><p class="muted">把品牌确认过的事实写在这里。修改会使引用它的内容重新待审。</p><label for="source-text">原始资料</label><textarea id="source-text" rows="16" maxlength="20000">${esc(s.text)}</textarea><div class="actions"><button class="primary" id="save-source">保存资料</button><button class="quiet" id="discard">放弃修改</button></div></section><aside class="panel"><div class="eyebrow">BRAND CONTEXT</div><h2>${esc(current.brief.brand)}</h2>${[
@@ -430,7 +464,7 @@ function sourceView() {
     )
     .join(
       "",
-    )}<p class="smallhelp">v0.1 每个项目对应一份品牌简报和一个主资料文档。需要不同定位时，请新建项目。</p></aside></div>`;
+    )}<p class="smallhelp">每个项目对应一份品牌简报和一个主资料文档。需要不同定位时，请新建项目。</p></aside></div>`;
 }
 function activityView() {
   return `<div class="panel timeline"><h3>交付过程，可追溯</h3>${[

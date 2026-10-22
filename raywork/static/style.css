@@ -1158,3 +1158,10 @@ dialog::backdrop {
     display: block;
   }
 }
+
+/* Confirmed customer preferences */
+.memory-list {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px;margin-top:24px}
+.memory-card {border:1px solid var(--line,#deded6);border-radius:12px;padding:20px;overflow-wrap:anywhere}
+.memory-card p {white-space:pre-wrap}
+select {width:100%;padding:12px;border:1px solid #d5d8ce;border-radius:8px;background:#fff;color:#243b31;font:inherit}
+.tabs {flex-wrap:wrap}
